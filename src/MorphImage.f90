@@ -58,8 +58,6 @@ IMPLICIT NONE
          
       ENDDO
       
-      
-      
       DEALLOCATE( img, tend, u, v )
 
 
