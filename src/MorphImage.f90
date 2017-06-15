@@ -2,6 +2,10 @@ PROGRAM MorphImage
 
 
 USE CommonData
+#ifdef HAVE_CUDA
+USE MorphImageKernels
+USE CudaFor
+#endif
 
 IMPLICIT NONE
 
@@ -10,23 +14,30 @@ IMPLICIT NONE
    INTEGER, PARAMETER       :: ol      = 1
    INTEGER, PARAMETER       :: nSteps  = 1
    INTEGER, PARAMETER       :: nStepsPerDump = 200
+   INTEGER, PARAMETER       :: nX = 600
+   INTEGER, PARAMETER       :: nY = 600
    REAL(prec), PARAMETER    :: dFac    = 0.0002_prec
    REAL(prec), PARAMETER    :: Pfac    = 0.8_prec
    REAL(prec), PARAMETER    :: dt      = 0.5_prec
    CHARACTER(20), PARAMETER :: rgbfile = 'ODonnyBoy.RGB'
 
-   INTEGER                 :: nX, nY, i, j, iT, jT
+   INTEGER                 :: i, j, iT, jT, iStat
    REAL(prec), ALLOCATABLE :: img(:,:,:), tend(:,:,:) , u(:,:), v(:,:)
    REAL(prec)              :: dWeights(-ol:ol,-ol:ol)
+   REAL(prec)              :: t1, t2
 #ifdef HAVE_CUDA
    REAL(prec), DEVICE, ALLOCATABLE :: img_dev(:,:,:), tend_dev(:,:,:) , u_dev(:,:), v_dev(:,:)
    REAL(prec), DEVICE              :: dWeights_dev(-ol:ol,-ol:ol)
+   TYPE( dim3 )                    :: gridSize, gridSize_diff
+   TYPE( dim3 )                    :: threadsPerBlock, threadsPerBlock_diff
 #endif
    CHARACTER(5)            :: iterChar
    
-      nX = 600
-      nY = 600
-   
+      !nX = 600
+      !nY = 600
+#ifdef HAVE_CUDA
+      CALL SetCUDAConstants( dFac, dt, ol, nX, nY )
+#endif
       CALL SetupDWeights( dWeights )
       CALL MakeBWSlats( img, nX, nY )
       
@@ -45,6 +56,11 @@ IMPLICIT NONE
       img_dev      = img 
       tend_dev     = tend 
       dWeights_dev = dWeights 
+ 
+      threadsPerBlock = dim3( 16, 16, 3 )
+      gridSize        = dim3( nX/16+1, nY/16+1, 1 )
+      threadsPerBlock_diff = dim3( 8, 8, 3 )
+      gridSize_diff        = dim3( nX/8+1, nY/8+1, 1 )
 #else
       !$acc enter data pcopyin( img )
       !$acc enter data pcopyin( dWeights )
@@ -53,10 +69,15 @@ IMPLICIT NONE
       !$acc enter data pcopyin( tend )
 #endif
       DO iT = 1, nSteps
+         CALL CPU_TIME(t1)
          DO jT = 1, nStepsPerDump
       
-            tend = 0.0_prec ! Zero out the tendency
-#ifdef HAVE_CUDA
+#ifdef HAVE_CUDA 
+            CALL DiffusiveTendency_CUDA<<<gridSize_diff,threadsPerBlock_diff>>>( img_dev, dWeights_dev, tend_dev )
+            
+            CALL AdvectiveTendency_CUDA<<<gridSize,threadsPerBlock>>>( img_dev, u_dev, v_dev, tend_dev )
+
+            CALL UpdateSolution_CUDA<<<gridSize,threadsPerBlock>>>( img_dev, tend_dev )
 
 #else 
             CALL UpdateHalos( img, nX, nY )
@@ -68,8 +89,17 @@ IMPLICIT NONE
             CALL UpdateSolution( img, tend, nX, nY )
 #endif            
          ENDDO
+#ifdef HAVE_CUDA
+         istat= cudaDeviceSynchronize( )
+#endif
+         CALL CPU_TIME(t2)
+         PRINT*, 'Main Loop Time :', (t2-t1),' (sec)'
          ! -------------- File I/O ----------------------------------- !
+#ifdef HAVE_CUDA
+         img = img_dev
+#else
          !$acc update host( img )
+#endif
          IF( doFileIO )THEN
             PRINT*, 'File I/O :', iT
             WRITE( iterChar, '(I5.5)' ) iT
@@ -79,14 +109,16 @@ IMPLICIT NONE
          
       ENDDO
 
+#ifdef HAVE_CUDA
+      DEALLOCATE( img_dev, tend_dev, u_dev, v_dev )
+#else
       !$acc exit data delete( tend )
       !$acc exit data delete( dWeights )
       !$acc exit data delete( img )
       !$acc exit data delete( u )
       !$acc exit data delete( v )
-
       DEALLOCATE( img, tend, u, v )
-
+#endif
 
 CONTAINS
 

@@ -1,0 +1,108 @@
+MODULE MorphImageKernels
+
+
+USE CommonData
+
+IMPLICIT NONE
+
+   REAL(prec), CONSTANT :: dFac_dev
+   REAL(prec), CONSTANT :: dt_dev
+   INTEGER, CONSTANT    :: ol_dev   
+   INTEGER, CONSTANT    :: nX_dev
+   INTEGER, CONSTANT    :: nY_dev
+CONTAINS
+
+   SUBROUTINE SetCUDAConstants( dFac, dt, ol, nX, nY )
+      IMPLICIT NONE
+      INTEGER, INTENT(in)       :: nX, nY,ol
+      REAL(prec), INTENT(in)    :: dFac, dt
+
+         dFac_dev = dFac
+         dt_dev   = dt
+         ol_dev   = ol
+         nX_dev   = nX
+         nY_dev   = nY
+
+   END SUBROUTINE SetCUDAConstants
+!
+   ATTRIBUTES(Global) SUBROUTINE DiffusiveTendency_CUDA( img, dWeights, tend )
+      IMPLICIT NONE
+      REAL(prec), INTENT(in)    :: img(1:3,1-ol_dev:nX_dev+ol_dev,1-ol_dev:nY_dev+ol_dev)
+      REAL(prec), INTENT(in)    :: dWeights(-ol_dev:ol_dev,-ol_dev:ol_dev)
+      REAL(prec), INTENT(inout) :: tend(1:3,1:nX_dev,1:nY_dev)
+      ! Local
+      INTEGER    :: i, j, k, ii, jj
+      REAL(prec) :: tsum
+
+         i = threadIdx % x + (blockIdx % x - 1)*blockDim % x
+         j = threadIdx % y + (blockIdx % y - 1)*blockDim % y
+         k = threadIdx % z
+
+         IF( i <= nX_dev .AND. j <= nY_dev )THEN
+       
+            tsum = 0.0_prec
+            DO jj = -ol_dev,ol_dev
+               DO ii = -ol_dev,ol_dev
+                  tsum = tsum + dFac_dev*dWeights(ii,jj)*img(k,i-ii,j-jj)
+               ENDDO
+            ENDDO
+            tend(k,i,j) = tsum
+                  
+         ENDIF         
+   END SUBROUTINE DiffusiveTendency_CUDA
+!
+   ATTRIBUTES(Global) SUBROUTINE AdvectiveTendency_CUDA( img, u, v, tend )
+      IMPLICIT NONE
+      REAL(prec), INTENT(in)    :: img(1:3,1-ol_dev:nX_dev+ol_dev,1-ol_dev:nY_dev+ol_dev)
+      REAL(prec), INTENT(in)    :: u(1-ol_dev:nX_dev+ol_dev,1-ol_dev:nY_dev+ol_dev)
+      REAL(prec), INTENT(in)    :: v(1-ol_dev:nX_dev+ol_dev,1-ol_dev:nY_dev+ol_dev)
+      REAL(prec), INTENT(inout) :: tend(1:3,1:nX_dev,1:nY_dev)
+      ! Local
+      INTEGER :: i, j, k, ii, jj
+      REAL(prec) :: fs, fn, fw, fe
+      
+         i = threadIdx % x + (blockIdx % x - 1)*blockDim % x
+         j = threadIdx % y + (blockIdx % y - 1)*blockDim % y
+         k = threadIdx % z
+
+         IF( i <= nX_dev .AND. j <= nY_dev )THEN
+               
+            ! Do first order upwind flux
+            fs = ( -v(i,j-1)*img(k,i,j-1) - v(i,j)*img(k,i,j) - &
+                             MAX( abs(v(i,j-1)), abs(v(i,j)) )*( img(k,i,j-1) - img(k,i,j) ) )
+                                     
+            fn = ( v(i,j+1)*img(k,i,j+1) + v(i,j)*img(k,i,j) - &
+                            MAX( abs(v(i,j+1)), abs(v(i,j)) )*( img(k,i,j+1) - img(k,i,j) ) )
+                                     
+            fw = ( -u(i-1,j)*img(k,i-1,j) - u(i,j)*img(k,i,j) - &
+                            MAX( abs(u(i-1,j)), abs(u(i,j)) )*( img(k,i-1,j) - img(k,i,j) ) )
+                                     
+            fe = ( u(i+1,j)*img(k,i+1,j) + u(i,j)*img(i,j,k) - &
+                            MAX( abs(u(i+1,j)), abs(u(i,j)) )*( img(k,i+1,j) - img(k,i,j) ) )
+                                     
+            tend(k,i,j) = tend(k,i,j) - 0.5_prec*(fe+fw+fn+fs)
+
+         ENDIF
+                  
+      
+   END SUBROUTINE AdvectiveTendency_CUDA
+!
+   ATTRIBUTES(Global) SUBROUTINE UpdateSolution_CUDA( img, tend )
+      IMPLICIT NONE
+      REAL(prec), INTENT(inout) :: img(1:3,1-ol_dev:nX_dev+ol_dev,1-ol_dev:nY_dev+ol_dev)
+      REAL(prec), INTENT(in)    :: tend(1:3,1:nX_dev,1:nY_dev)
+      ! Local
+      INTEGER :: i, j, k
+
+         i = threadIdx % x + (blockIdx % x - 1)*blockDim % x
+         j = threadIdx % y + (blockIdx % y - 1)*blockDim % y
+         k = threadIdx % z
+
+         IF( i <= nX_dev .AND. j <= nY_dev )THEN
+            img(k,i,j) = img(k,i,j) + dt_dev*tend(k,i,j)
+         ENDIF
+      
+   END SUBROUTINE UpdateSolution_CUDA
+!
+      
+END MODULE MorphImageKernels

@@ -1,8 +1,8 @@
 
 FC=pgf90
-#OPT=-O2
-OPT=-O2 -acc -ta=tesla:cc60 -Minfo=accel
-#OPT=-O2 -Mcuda=cc35,ptxinfo
+#OPT=-O2 -Mpreprocess
+#OPT=-O2 -Mpreprocess -acc -ta=tesla:cc60 -Minfo=accel
+OPT=-O2 -Mpreprocess -DHAVE_CUDA -Mcuda=cc60,ptxinfo
 
 
 .PHONY : MorphImage
@@ -19,8 +19,8 @@ CommonData.o : src/CommonData.f90
 MorphImage.o : CommonData.o src/MorphImage.f90
 	${FC} ${OPT} -c src/MorphImage.f90 -o $@
 
-MorphImageKernels.o : CommonData.o src/MorphImageKernels.f90
-	${FC} ${OPT} -c src/MorphImageKernels.f90 -o $@
+MorphImageKernels.o : CommonData.o src/MorphImageKernels.cuf
+	${FC} ${OPT} -c src/MorphImageKernels.cuf -o $@
 
 
 .PHONY : clean
