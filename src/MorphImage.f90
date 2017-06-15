@@ -1,15 +1,10 @@
 PROGRAM MorphImage
 
 
+USE CommonData
 
 IMPLICIT NONE
 
-! ====================== Precision Options =========================== !
-   INTEGER, PARAMETER :: sp   = SELECTED_REAL_KIND(6, 37)     ! 32-bit
-   INTEGER, PARAMETER :: dp   = SELECTED_REAL_KIND(15, 307)   ! 64-bit
-   INTEGER, PARAMETER :: qp   = SELECTED_REAL_KIND(33, 4931)  ! 128-bit
-   INTEGER, PARAMETER :: prec = sp                            ! Specify the precision here
-! ==================================================================== !
    LOGICAL, PARAMETER       :: doFileIO = .TRUE.
    INTEGER, PARAMETER       :: fUnit   = 102
    INTEGER, PARAMETER       :: ol      = 1
