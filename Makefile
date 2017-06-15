@@ -1,7 +1,7 @@
 
 FC=pgf90
-OPT=-O2
-#OPT=-O2 -acc -ta=tesla:cc60 -Minfo=accel
+#OPT=-O2
+OPT=-O2 -acc -ta=tesla:cc60 -Minfo=accel
 
 
 MorphImage : src/MorphImage.f90
