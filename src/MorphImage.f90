@@ -23,6 +23,10 @@ IMPLICIT NONE
    INTEGER                 :: nX, nY, i, j, iT, jT
    REAL(prec), ALLOCATABLE :: img(:,:,:), tend(:,:,:) , u(:,:), v(:,:)
    REAL(prec)              :: dWeights(-ol:ol,-ol:ol)
+#ifdef HAVE_CUDA
+   REAL(prec), DEVICE, ALLOCATABLE :: img_dev(:,:,:), tend_dev(:,:,:) , u_dev(:,:), v_dev(:,:)
+   REAL(prec), DEVICE              :: dWeights_dev(-ol:ol,-ol:ol)
+#endif
    CHARACTER(5)            :: iterChar
    
       nX = 600
@@ -31,24 +35,46 @@ IMPLICIT NONE
       CALL SetupDWeights( dWeights )
       CALL MakeBWSlats( img, nX, nY )
       
-      ALLOCATE( u(1-ol:nX+ol,1-ol:nX+ol), v(1-ol:nX+ol,1-ol:nX+ol) )
+      ALLOCATE( u(1-ol:nX+ol,1-ol:nY+ol), v(1-ol:nX+ol,1-ol:nY+ol) )
       
       CALL SetupVelocity( u, v, nX, nY )
       
-      
       ! "Forward step" in time to successively blur and advect the image
+
+#ifdef HAVE_CUDA
+     ! Allocate device data and move the data onto the GPU
+      ALLOCATE( u_dev(1-ol:nX+ol,1-ol:nY+ol), v_dev(1-ol:nX+ol,1-ol:nY+ol) )
+      ALLOCATE( img_dev(1:3,1-ol:nX+ol,1-ol:nY+ol), tend_dev(1:3,1:nX,1:nY) )
+      u_dev        = u 
+      v_dev        = v 
+      img_dev      = img 
+      tend_dev     = tend 
+      dWeights_dev = dWeights 
+#else
+      !$acc enter data pcopyin( img )
+      !$acc enter data pcopyin( dWeights )
+      !$acc enter data pcopyin( u )
+      !$acc enter data pcopyin( v )
+      !$acc enter data pcopyin( tend )
+#endif
       DO iT = 1, nSteps
          DO jT = 1, nStepsPerDump
       
             tend = 0.0_prec ! Zero out the tendency
-         
+#ifdef HAVE_CUDA
+
+#else 
             CALL UpdateHalos( img, nX, nY )
-            CALL DiffusiveTendency( img, dWeights, tend, nX, nY )
-            CALL AdvectiveTendency( img, u, v, tend, nX, nY )
-            CALL UpdateSolution( img, tend, nX, nY )
             
+            CALL DiffusiveTendency( img, dWeights, tend, nX, nY )
+            
+            CALL AdvectiveTendency( img, u, v, tend, nX, nY )
+
+            CALL UpdateSolution( img, tend, nX, nY )
+#endif            
          ENDDO
          ! -------------- File I/O ----------------------------------- !
+         !$acc update host( img )
          IF( doFileIO )THEN
             PRINT*, 'File I/O :', iT
             WRITE( iterChar, '(I5.5)' ) iT
@@ -57,7 +83,13 @@ IMPLICIT NONE
          ! ----------------------------------------------------------- !
          
       ENDDO
-      
+
+      !$acc exit data delete( tend )
+      !$acc exit data delete( dWeights )
+      !$acc exit data delete( img )
+      !$acc exit data delete( u )
+      !$acc exit data delete( v )
+
       DEALLOCATE( img, tend, u, v )
 
 
@@ -125,7 +157,7 @@ CONTAINS
       ! Local
       INTEGER :: i, j
       
-      OPEN( UNIT=fUnit, &
+      OPEN( UNIT= fUnit, &
             FILE = TRIM(rgbFileName),&
             FORM = 'FORMATTED', &
             ACCESS = 'SEQUENTIAL', &
@@ -181,7 +213,6 @@ CONTAINS
             STATUS = 'REPLACE', &
             ACTION = 'WRITE' )
             
-      
       DO j = 1, nY
          DO i = 1, nX
             WRITE( fUnit, * )img(1:3,i,j)
@@ -201,7 +232,7 @@ CONTAINS
       ! Local
       INTEGER :: i, j, k, ii, jj
 
-
+         !$acc kernels present( img, dWeights, tend )
          DO j = 1, nY
             DO i = 1, nX
                
@@ -218,6 +249,8 @@ CONTAINS
                   
             ENDDO
          ENDDO
+         !$acc end kernels
+
          
    END SUBROUTINE DiffusiveTendency
 !
@@ -232,6 +265,7 @@ CONTAINS
       INTEGER :: i, j, k, ii, jj
       REAL(prec) :: fs, fn, fw, fe
       
+         !$acc kernels present( img, u, v, tend )
          DO j = 1, nY
             DO i = 1, nX
                
@@ -254,6 +288,7 @@ CONTAINS
                   
             ENDDO
          ENDDO
+         !$acc end kernels
       
    END SUBROUTINE AdvectiveTendency
 !
@@ -265,7 +300,7 @@ CONTAINS
       ! Local
       INTEGER :: i, j, k
       
-      
+         !$acc kernels present( img, tend )     
          DO j = 1, nY
             DO i = 1, nX
                img(1,i,j) = img(1,i,j) + dt*tend(1,i,j)
@@ -273,6 +308,7 @@ CONTAINS
                img(3,i,j) = img(3,i,j) + dt*tend(3,i,j)
             ENDDO
          ENDDO
+         !$acc end kernels
       
    END SUBROUTINE UpdateSolution
 !
@@ -282,7 +318,8 @@ CONTAINS
       REAL(prec), INTENT(inout) :: img(1:3,1-ol:nX+ol,1-ol:nY+ol)
       ! Local
       INTEGER :: i, j, k
-      
+
+          !$acc kernels present( img ) 
             DO j = 1, nY
                img(1,0,j)    = 0.0_prec 
                img(1,nX+1,j) = 0.0_prec
@@ -304,6 +341,7 @@ CONTAINS
                img(3,i,0)    = 0.0_prec 
                img(3,i,nY+1) = 0.0_prec
             ENDDO
+          !$acc end kernels
             
    END SUBROUTINE UpdateHalos   
       
