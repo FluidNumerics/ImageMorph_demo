@@ -3,10 +3,10 @@ Small Fortran program for performing stencil operations on 2-D RGB data.
 This source code is used as part of exercises for porting Fortran applications to graphics processing units (GPUs)
 
 # Getting Started
-   ## Clone the code from the github repository, using the following command : 
+   ## Clone the repo : 
        git clone git@github.com:FluidNumerics/ImageMorph_demo.git
 
-   ## To compile, 
+   ## Building the Executable
        cd ImageMorph_demo
        make
    
