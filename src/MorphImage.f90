@@ -2,10 +2,7 @@ PROGRAM MorphImage
 
 
 USE CommonData
-#ifdef HAVE_CUDA
-USE MorphImageKernels
-USE CudaFor
-#endif
+
 
 IMPLICIT NONE
 
@@ -25,19 +22,9 @@ IMPLICIT NONE
    REAL(prec), ALLOCATABLE :: img(:,:,:), tend(:,:,:) , u(:,:), v(:,:)
    REAL(prec)              :: dWeights(-ol:ol,-ol:ol)
    REAL(prec)              :: t1, t2
-#ifdef HAVE_CUDA
-   REAL(prec), DEVICE, ALLOCATABLE :: img_dev(:,:,:), tend_dev(:,:,:) , u_dev(:,:), v_dev(:,:)
-   REAL(prec), DEVICE              :: dWeights_dev(-ol:ol,-ol:ol)
-   TYPE( dim3 )                    :: gridSize, gridSize_diff
-   TYPE( dim3 )                    :: threadsPerBlock, threadsPerBlock_diff
-#endif
    CHARACTER(5)            :: iterChar
    
-      !nX = 600
-      !nY = 600
-#ifdef HAVE_CUDA
-      CALL SetCUDAConstants( dFac, dt, ol, nX, nY )
-#endif
+
       CALL SetupDWeights( dWeights )
       CALL MakeBWSlats( img, nX, nY )
       
@@ -45,61 +32,22 @@ IMPLICIT NONE
       
       CALL SetupVelocity( u, v, nX, nY )
       
-      ! "Forward step" in time to successively blur and advect the image
-
-#ifdef HAVE_CUDA
-     ! Allocate device data and move the data onto the GPU
-      ALLOCATE( u_dev(1-ol:nX+ol,1-ol:nY+ol), v_dev(1-ol:nX+ol,1-ol:nY+ol) )
-      ALLOCATE( img_dev(1:3,1-ol:nX+ol,1-ol:nY+ol), tend_dev(1:3,1:nX,1:nY) )
-      u_dev        = u 
-      v_dev        = v 
-      img_dev      = img 
-      tend_dev     = tend 
-      dWeights_dev = dWeights 
- 
-      threadsPerBlock = dim3( 16, 16, 3 )
-      gridSize        = dim3( nX/16+1, nY/16+1, 1 )
-      threadsPerBlock_diff = dim3( 8, 8, 3 )
-      gridSize_diff        = dim3( nX/8+1, nY/8+1, 1 )
-#else
-      !$acc enter data pcopyin( img )
-      !$acc enter data pcopyin( dWeights )
-      !$acc enter data pcopyin( u )
-      !$acc enter data pcopyin( v )
-      !$acc enter data pcopyin( tend )
-#endif
       DO iT = 1, nSteps
          CALL CPU_TIME(t1)
          DO jT = 1, nStepsPerDump
-      
-#ifdef HAVE_CUDA 
-            CALL DiffusiveTendency_CUDA<<<gridSize_diff,threadsPerBlock_diff>>>( img_dev, dWeights_dev, tend_dev )
-            
-            CALL AdvectiveTendency_CUDA<<<gridSize,threadsPerBlock>>>( img_dev, u_dev, v_dev, tend_dev )
-
-            CALL UpdateSolution_CUDA<<<gridSize,threadsPerBlock>>>( img_dev, tend_dev )
-
-#else 
+       
             CALL UpdateHalos( img, nX, nY )
             
             CALL DiffusiveTendency( img, dWeights, tend, nX, nY )
             
             CALL AdvectiveTendency( img, u, v, tend, nX, nY )
 
-            CALL UpdateSolution( img, tend, nX, nY )
-#endif            
+            CALL UpdateSolution( img, tend, nX, nY )          
          ENDDO
-#ifdef HAVE_CUDA
-         istat= cudaDeviceSynchronize( )
-#endif
+
          CALL CPU_TIME(t2)
          PRINT*, 'Main Loop Time :', (t2-t1),' (sec)'
          ! -------------- File I/O ----------------------------------- !
-#ifdef HAVE_CUDA
-         img = img_dev
-#else
-         !$acc update host( img )
-#endif
          IF( doFileIO )THEN
             PRINT*, 'File I/O :', iT
             WRITE( iterChar, '(I5.5)' ) iT
@@ -109,16 +57,7 @@ IMPLICIT NONE
          
       ENDDO
 
-#ifdef HAVE_CUDA
-      DEALLOCATE( img_dev, tend_dev, u_dev, v_dev )
-#else
-      !$acc exit data delete( tend )
-      !$acc exit data delete( dWeights )
-      !$acc exit data delete( img )
-      !$acc exit data delete( u )
-      !$acc exit data delete( v )
       DEALLOCATE( img, tend, u, v )
-#endif
 
 CONTAINS
 
@@ -259,7 +198,6 @@ CONTAINS
       ! Local
       INTEGER :: i, j, k, ii, jj
 
-         !$acc kernels present( img, dWeights, tend )
          DO j = 1, nY
             DO i = 1, nX
                
@@ -276,7 +214,6 @@ CONTAINS
                   
             ENDDO
          ENDDO
-         !$acc end kernels
 
          
    END SUBROUTINE DiffusiveTendency
@@ -292,7 +229,6 @@ CONTAINS
       INTEGER :: i, j, k, ii, jj
       REAL(prec) :: fs, fn, fw, fe
       
-         !$acc kernels present( img, u, v, tend )
          DO j = 1, nY
             DO i = 1, nX
                
@@ -315,7 +251,6 @@ CONTAINS
                   
             ENDDO
          ENDDO
-         !$acc end kernels
       
    END SUBROUTINE AdvectiveTendency
 !
@@ -326,8 +261,7 @@ CONTAINS
       REAL(prec), INTENT(inout) :: tend(1:3,1:nX,1:nY)
       ! Local
       INTEGER :: i, j, k
-      
-         !$acc kernels present( img, tend )     
+          
          DO j = 1, nY
             DO i = 1, nX
                img(1,i,j) = img(1,i,j) + dt*tend(1,i,j)
@@ -335,7 +269,6 @@ CONTAINS
                img(3,i,j) = img(3,i,j) + dt*tend(3,i,j)
             ENDDO
          ENDDO
-         !$acc end kernels
       
    END SUBROUTINE UpdateSolution
 !
@@ -346,7 +279,6 @@ CONTAINS
       ! Local
       INTEGER :: i, j, k
 
-          !$acc kernels present( img ) 
             DO j = 1, nY
                img(1,0,j)    = 0.0_prec 
                img(1,nX+1,j) = 0.0_prec
@@ -368,7 +300,6 @@ CONTAINS
                img(3,i,0)    = 0.0_prec 
                img(3,i,nY+1) = 0.0_prec
             ENDDO
-          !$acc end kernels
             
    END SUBROUTINE UpdateHalos   
       
