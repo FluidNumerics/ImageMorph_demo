@@ -1,5 +1,4 @@
 
-FC=pgf90
 OPT=-O2 -Mpreprocess
 
 

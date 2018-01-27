@@ -1,0 +1,9 @@
+#!/bin/sh
+
+# Set the fortran compiler here
+export FC=pgf90
+
+
+
+
+
