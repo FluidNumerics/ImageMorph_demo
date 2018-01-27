@@ -1,12 +1,13 @@
-# rgbso
-Small Fortran program for performing stencil operations on RGB data.
+# ImageMorph_demo
+Small Fortran program for performing stencil operations on 2-D RGB data.
+This source code is used as part of exercises for porting Fortran applications to graphics processing units (GPUs)
 
 # Getting Started
    ## Clone the code from the github repository, using the following command : 
-       git clone git@github.com:schoonovernumerics/rgbso.git
+       git clone git@github.com:FluidNumerics/ImageMorph_demo.git
 
    ## To compile, 
-       cd rgbso
+       cd ImageMorph_demo
        make
    
    ## Run the application
