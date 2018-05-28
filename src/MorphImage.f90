@@ -9,10 +9,10 @@ PROGRAM MorphImage
   LOGICAL, PARAMETER       :: DOFileIO = .TRUE.
   INTEGER, PARAMETER       :: fUnit   = 102
   INTEGER, PARAMETER       :: ol      = 1
-  INTEGER, PARAMETER       :: nSteps  = 1
-  INTEGER, PARAMETER       :: nStepsPerDump = 200
-  INTEGER, PARAMETER       :: nX = 600
-  INTEGER, PARAMETER       :: nY = 600
+  INTEGER, PARAMETER       :: nSteps  = 100
+  INTEGER, PARAMETER       :: nStepsPerDump = 10
+  INTEGER, PARAMETER       :: nX = 400
+  INTEGER, PARAMETER       :: nY = 400
   REAL(prec), PARAMETER    :: dFac    = 0.0002_prec
   REAL(prec), PARAMETER    :: Pfac    = 0.8_prec
   REAL(prec), PARAMETER    :: dt      = 0.5_prec
@@ -104,11 +104,12 @@ CONTAINS
         x = REAL(i,prec)/REAL(nX,prec)
         r1 = (x-0.5_prec)**2 + (y-0.65_prec)**2
         r2 = (x-0.5_prec)**2 + (y-0.35_prec)**2
+
         u(i,j) = Pfac*( (y-0.65_prec)*exp( -r1/(2.0_prec*0.01_prec) ) -&
-          (y-0.35_prec)*exp( -r2/(2.0_prec*0.01_prec) ) )
+                        (y-0.35_prec)*exp( -r2/(2.0_prec*0.01_prec) ) )
 
         v(i,j) = -Pfac*( (x-0.5_prec)*exp( -r1/(2.0_prec*0.01_prec) ) -&
-          (x-0.5_prec)*exp( -r2/(2.0_prec*0.01_prec) ) )
+                         (x-0.5_prec)*exp( -r2/(2.0_prec*0.01_prec) ) )
 
       ENDDO
     ENDDO
@@ -243,7 +244,7 @@ CONTAINS
           fw = 0.5_prec*( -u(i-1,j)*img(k,i-1,j) - u(i,j)*img(k,i,j) - &
             MAX( abs(u(i-1,j)), abs(u(i,j)) )*( img(k,i-1,j) - img(k,i,j) ) )
 
-          fe = 0.5_prec*( u(i+1,j)*img(k,i+1,j) + u(i,j)*img(i,j,k) - &
+          fe = 0.5_prec*( u(i+1,j)*img(k,i+1,j) + u(i,j)*img(k,i,j) - &
             MAX( abs(u(i+1,j)), abs(u(i,j)) )*( img(k,i+1,j) - img(k,i,j) ) )
 
           tend(k,i,j) = tend(k,i,j) - (fe+fw+fn+fs)
