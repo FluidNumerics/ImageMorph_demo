@@ -9,10 +9,10 @@ PROGRAM MorphImage
   LOGICAL, PARAMETER       :: DOFileIO = .TRUE.
   INTEGER, PARAMETER       :: fUnit   = 102
   INTEGER, PARAMETER       :: ol      = 1
-  INTEGER, PARAMETER       :: nSteps  = 100
+  INTEGER, PARAMETER       :: nSteps  = 1
   INTEGER, PARAMETER       :: nStepsPerDump = 10
-  INTEGER, PARAMETER       :: nX = 400
-  INTEGER, PARAMETER       :: nY = 400
+  INTEGER, PARAMETER       :: nX = 600
+  INTEGER, PARAMETER       :: nY = 600
   REAL(prec), PARAMETER    :: dFac    = 0.0002_prec
   REAL(prec), PARAMETER    :: Pfac    = 0.8_prec
   REAL(prec), PARAMETER    :: dt      = 0.5_prec
