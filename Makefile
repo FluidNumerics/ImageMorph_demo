@@ -1,5 +1,5 @@
 
-OPT=-O2 -Mpreprocess
+OPT=-O0 -g -fbacktrace
 
 
 .PHONY : MorphImage
