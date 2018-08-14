@@ -2,6 +2,7 @@ PROGRAM MorphImage
 
 
   USE COMMONDATA
+  USE MPI
 
 
   IMPLICIT NONE
@@ -11,8 +12,8 @@ PROGRAM MorphImage
   INTEGER, PARAMETER       :: ol      = 1
   INTEGER, PARAMETER       :: nSteps  = 1
   INTEGER, PARAMETER       :: nStepsPerDump = 10
-  INTEGER, PARAMETER       :: nX = 600
-  INTEGER, PARAMETER       :: nY = 600
+  INTEGER, PARAMETER       :: nX = 100
+  INTEGER, PARAMETER       :: nY = 100
   REAL(prec), PARAMETER    :: dFac    = 0.0002_prec
   REAL(prec), PARAMETER    :: Pfac    = 0.8_prec
   REAL(prec), PARAMETER    :: dt      = 0.5_prec
@@ -20,44 +21,74 @@ PROGRAM MorphImage
 
   INTEGER                 :: i, j, iT, jT, iStat
   REAL(prec), ALLOCATABLE :: img(:,:,:), tend(:,:,:) , u(:,:), v(:,:)
+  REAL(prec), ALLOCATABLE :: local_img(:,:,:), local_tend(:,:,:), local_u(:,:), local_v(:,:)
   REAL(prec)              :: dWeights(-ol:ol,-ol:ol)
   REAL(prec)              :: t1, t2
   CHARACTER(5)            :: iterChar
+  INTEGER :: mpiErr, number_of_ranks, my_rank
+  INTEGER :: my_nY
+
+  CALL MPI_INIT( mpiErr ) 
+
+  CALL MPI_COMM_SIZE( MPI_COMM_WORLD, number_of_ranks, mpiErr )
+  CALL MPI_COMM_RANK( MPI_COMM_WORLD, my_rank, mpiErr )
+  PRINT*, "Greetings from", my_rank, "of ", number_of_ranks-1
+
+
+  my_nY = nY/number_of_ranks
+
+  ALLOCATE( u(1-ol:nX+ol,1-ol:nY+ol), v(1-ol:nX+ol,1-ol:nY+ol), &
+            img(1:3,1-ol:nX+ol,1-ol:nY+ol), tend(1:3,1-ol:nX+ol,1-ol:nY+ol) )
+
+  ALLOCATE(  local_u(1-ol:nX+ol,1-ol:my_nY+ol), local_v(1-ol:nX+ol,1-ol:my_nY+ol), &
+            local_img(1:3,1-ol:nX+ol,1-ol:my_nY+ol), local_tend(1:3,1-ol:nX+ol,1-ol:my_nY+ol) )
 
 
   CALL SetupDWeights( dWeights )
+
+!  img = 0.0_prec
   CALL MakeBWSlats( img, nX, nY )
 
-  ALLOCATE( u(1-ol:nX+ol,1-ol:nY+ol), v(1-ol:nX+ol,1-ol:nY+ol) )
+!  CALL MakeBWSlats( local_img, nX, nY )
+!  CALL MPI_Gather( local_img, 3*nX*my_nY, MPI_FLOAT, img, 3*nX*my_nY, MPI_FLOAT, 0, MPI_COMM_WORLD, mpiErr )
 
-  CALL SetupVelocity( u, v, nX, nY )
+  IF( my_rank == 0 )THEN
 
-  DO iT = 1, nSteps
-    CALL CPU_TIME(t1)
-    DO jT = 1, nStepsPerDump
+    CALL SetupVelocity( u, v, nX, nY )
 
-      CALL UpdateHalos( img, nX, nY )
+    DO iT = 1, nSteps
+      CALL CPU_TIME(t1)
+      DO jT = 1, nStepsPerDump
 
-      CALL DIFfusiveTendency( img, dWeights, tend, nX, nY )
+        CALL UpdateHalos( img, nX, nY )
 
-      CALL AdvectiveTendency( img, u, v, tend, nX, nY )
+        CALL DIFfusiveTendency( img, dWeights, tend, nX, nY )
 
-      CALL UpdateSolution( img, tend, nX, nY )
+        CALL AdvectiveTendency( img, u, v, tend, nX, nY )
+
+        CALL UpdateSolution( img, tend, nX, nY )
+      ENDDO
+
+      CALL CPU_TIME(t2)
+      PRINT*, 'Main Loop Time :', (t2-t1),' (sec)'
+      ! -------------- File I/O ----------------------------------- !
+      IF( DOFileIO )THEN
+        PRINT*, 'File I/O :', iT
+        WRITE( iterChar, '(I5.5)' ) iT
+        CALL WriteRGBFile( img, 'bwslats.'//iterChar//'.RGB', nX, nY )
+      ENDIF
+      ! ----------------------------------------------------------- !
+
     ENDDO
 
-    CALL CPU_TIME(t2)
-    PRINT*, 'Main Loop Time :', (t2-t1),' (sec)'
-    ! -------------- File I/O ----------------------------------- !
-    IF( DOFileIO )THEN
-      PRINT*, 'File I/O :', iT
-      WRITE( iterChar, '(I5.5)' ) iT
-      CALL WriteRGBFile( img, 'bwslats.'//iterChar//'.RGB', nX, nY )
-    ENDIF
-    ! ----------------------------------------------------------- !
-
-  ENDDO
+  ENDIF
 
   DEALLOCATE( img, tend, u, v )
+  DEALLOCATE( local_img, local_tend, local_u, local_v )
+
+  CALL MPI_BARRIER( MPI_COMM_WORLD, mpiErr ) 
+
+  CALL MPI_FINALIZE( mpiErr ) 
 
 CONTAINS
 
@@ -144,20 +175,20 @@ CONTAINS
 
   END SUBROUTINE ReadRGBFile
 !
-  SUBROUTINE MakeBWSlats( img, nX, nY )
+  SUBROUTINE MakeBWSlats( img, nX_local, nY_local )
     IMPLICIT NONE
-    REAL(prec), ALLOCATABLE, INTENT(inout) :: img(:,:,:)
-    INTEGER, INTENT(in)                    :: nX, nY
+    INTEGER, INTENT(in)       :: nX_local, nY_local
+    REAL(prec), INTENT(inout) :: img(1:3,1:nX_local,1:nY_local)
     ! Local
     INTEGER :: i, j
     REAL(prec) :: flg
 
 
-    ALLOCATE( img(1:3,1-ol:nX+ol,1-ol:nY+ol), tend(1:3,1:nX,1:nY) )
+    !ALLOCATE( img(1:3,1-ol:nX_local+ol,1-ol:nY_local+ol), tend(1:3,1:nX_local,1:nY_local) )
 
-    DO j = 1, nY
-      DO i = 1, nX
-        flg = sin( 60.0_prec*3.141592653_prec*REAL((i-1),prec)/(REAL(nX,prec)) )
+    DO j = 1, nY_local
+      DO i = 1, nX_local
+        flg = sin( 60.0_prec*3.141592653_prec*REAL((i-1),prec)/(REAL(nX_local,prec)) )
         img(1:3,i,j) = (SIGN( 1.0_prec, flg ) + 1.0_prec )/2.0_prec
       ENDDO
     ENDDO
